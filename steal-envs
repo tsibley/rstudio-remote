@@ -1,0 +1,58 @@
+#!/usr/bin/env perl
+use strict;
+use warnings;
+
+use Getopt::Long;
+use File::Basename qw(basename);
+use List::MoreUtils qw(any);
+
+my $PROC = $^O eq 'linux' ? 'gnome-session' : 'ssh-agent';
+my $USER = getlogin();
+my @ENVS = qw(DBUS_SESSION_BUS_ADDRESS DISPLAY); # XXX: defaults only make sense for Linux
+
+GetOptions(
+    'p|process=s' => \$PROC,
+    'u|user=s'    => \$USER,
+    'h|help'      => sub {
+        warn "usage: ", basename($0), " [--user $USER] [--process $PROC] [NAME1 [NAME2 [NAME3]]]\n";
+        warn "   If no environment variable names are specified, the default set is:\n";
+        warn "       $_\n" for @ENVS;
+        exit;
+    },
+);
+@ENVS = @ARGV if @ARGV;
+
+# Steal required environment variables from the process
+if ( any { not defined $ENV{$_} } @ENVS ) {
+    my $pid = $PROC =~ /\D/
+        ? qx(pgrep -u $USER -o $PROC)
+        : $PROC;
+    chomp $pid;
+    
+    die "Could not find process $PROC (user $USER)\n" if not $pid;
+
+    my (%procenv, $envstr);
+    if ($^O eq 'linux') {
+        open ENVIRON, "<", "/proc/$pid/environ"
+            or die "Could not open /proc/$pid/environ: $!\n";
+        $envstr = <ENVIRON>;
+        close ENVIRON;
+    } else {
+        $envstr = qx(ps -p $pid -o command= -wwwE)
+            or die "Could not read environment via ps: $!\n";
+        chomp $envstr;
+        $envstr =~ s/^\S+ //;                       # remove executable path
+        $envstr =~ s/ (?=[A-Za-z0-9_]+=)/\0/g;      # replace _some_ spaces with nulls
+    }
+
+    %procenv = map { /=/ ? (split '=', $_, 2) : ($_, '') } split "\0", $envstr
+        if $envstr =~ /\0/;
+
+    if ( any { defined $procenv{$_} } @ENVS ) {
+        for (@ENVS) {
+            print qq'export $_="$procenv{$_}"\n'
+                if defined $procenv{$_};
+        }
+    }
+}
+

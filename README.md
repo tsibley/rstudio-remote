@@ -17,9 +17,10 @@ When piped input from another command or a file, `rstudio-run` sends the R code
 to RStudio and exits.  This makes it easy to pipe highlighted code from your
 favorite editor, such as Vim, to your RStudio session.
 
-Currently `rstudio-run` is written in bash and requires several external
-commands like `curl`, `jq`, and `lsof`.  While it works pretty well, it's a
-proof-of-concept and could be further refined, either in shell or in any other
-language.  It's based on watching RStudio itself interact with its backend
-session but might benefit from actually reading the RStudio backend's source
-code or documentation.
+Currently `rstudio-run` is written in bash and requires a couple standard
+external commands like `curl` and `lsof` and a couple not-as-standard commands
+like [`jq`](https://stedolan.github.io/jq/) and `steal-envs` (provided in this
+repo).  While it works pretty well, it's a proof-of-concept and could be
+further refined, either in shell or in any other language.  It's based on
+watching RStudio itself interact with its backend session but might benefit
+from actually reading the RStudio backend's source code or documentation.
