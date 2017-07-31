@@ -39,24 +39,22 @@ find-session() {
         die "Whoops, couldn't figure out the rsession address"
     fi
 
-    # Initialize a client session
-    export RS_CLIENT_ID="$(init-client)"
-
-    if [[ -z "$RS_CLIENT_ID" ]]; then
-        die "Whoops, couldn't initialize the session client!"
-    fi
+    # Use the desktop app's static client id.  This id has been used since
+    # 2012, starting with RStudio version 0.97.46.  Refer to the following
+    # lines of source code:
+    #
+    #    https://github.com/rstudio/rstudio/blob/master/src/cpp/session/SessionPersistentState.cpp#L48-L93
+    #
+    # Presumably it might be possible to support RStudio Server sessions too
+    # using the previous init-client function which called /rpc/client_init.
+    # However, there are other complications there such as how to get the
+    # shared secret.  I don't have a need for RStudio Server support right now,
+    # so I'm not going to bother looking at it.
+    export RS_CLIENT_ID="33e600bb-c1b1-46bf-b562-ab5cba070b0e"
 
     debug "RS_SHARED_SECRET = $RS_SHARED_SECRET"
     debug "RS_ADDRESS       = $RS_ADDRESS"
     debug "RS_CLIENT_ID     = $RS_CLIENT_ID"
-}
-
-init-client() {
-    curl -fsSX POST "$RS_ADDRESS/rpc/client_init" \
-        -H 'Accept: application/json' \
-        -H "X-Shared-Secret: $RS_SHARED_SECRET" \
-        -d '{"method":"client_init", "params":[], "clientVersion":""}' \
-        | jq --raw-output '.result.clientId'
 }
 
 run-cmd() {
