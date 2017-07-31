@@ -1,0 +1,93 @@
+#!/bin/bash
+set -e -o pipefail
+: ${RS_DEBUG:=0}
+[[ $RS_DEBUG -gt 0 ]] && set -x
+
+main() {
+    find-session
+    run-cmd "setwd($(r-quote "$PWD"))"
+
+    if [[ $# -gt 0 ]]; then
+        for cmd; do
+            run-cmd "$cmd"
+        done
+    else
+        while read -r -e -p '> ' cmd; do
+            run-cmd "$cmd"
+        done
+    fi
+}
+
+find-session() {
+    local pid=$(pgrep rsession)
+
+    if [[ -z $pid ]]; then
+        die "Hmm, can't find an RStudio session process.  Is RStudio running?"
+    fi
+
+    # Pluck RStudio's shared secret from its rsession process
+    eval "$(steal-envs --process $pid RS_SHARED_SECRET)"
+
+    if [[ -z "$RS_SHARED_SECRET" ]]; then
+        die "Whoops, couldn't find a session secret to steal!"
+    fi
+
+    # Snoop the HTTP port for rsession
+    export RS_ADDRESS="$(lsof -Fn -nP -a -i 4tcp@localhost -s tcp:LISTEN -p $pid | grep ^n | cut -c 2- | head -n1)"
+
+    if [[ -z "$RS_ADDRESS" ]]; then
+        die "Whoops, couldn't figure out the rsession address"
+    fi
+
+    # Initialize a client session
+    export RS_CLIENT_ID="$(init-client)"
+
+    if [[ -z "$RS_CLIENT_ID" ]]; then
+        die "Whoops, couldn't initialize the session client!"
+    fi
+
+    debug "RS_SHARED_SECRET = $RS_SHARED_SECRET"
+    debug "RS_ADDRESS       = $RS_ADDRESS"
+    debug "RS_CLIENT_ID     = $RS_CLIENT_ID"
+}
+
+init-client() {
+    curl -fsSX POST "$RS_ADDRESS/rpc/client_init" \
+        -H 'Accept: application/json' \
+        -H "X-Shared-Secret: $RS_SHARED_SECRET" \
+        -d '{"method":"client_init", "params":[], "clientVersion":""}' \
+        | jq --raw-output '.result.clientId'
+}
+
+run-cmd() {
+    local cmd="$1"
+
+    curl -fsS "$RS_ADDRESS/rpc/console_input" \
+        -H 'Accept: application/json' \
+        -H "X-Shared-Secret: $RS_SHARED_SECRET" \
+        -d "$(cmd-to-msg "$cmd")" \
+        > /dev/null
+}
+
+cmd-to-msg() {
+    local cmd="$1"
+
+    jq --arg cmd "$cmd" --arg client "$RS_CLIENT_ID" \
+        '.params[0] = $cmd | .clientId = $client' \
+        <<<'{"method":"console_input", "params":["$cmd",""], "clientId":"$client", "clientVersion":""}'
+}
+
+r-quote() {
+    perl -ple 's/(?=\\)/\\/g; s/(?=\x27)/\\/g; s/\A|\Z/\x27/g' <<<"$*"
+}
+
+die() {
+    echo "$@" >&2
+    exit 1
+}
+
+debug() {
+    [[ $RS_DEBUG -gt 0 ]] && echo "$@" >&2 || true
+}
+
+main "$@"
