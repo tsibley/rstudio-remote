@@ -25,18 +25,25 @@ find-session() {
         die "Hmm, can't find an RStudio session process.  Is RStudio running?"
     fi
 
-    # Pluck RStudio's shared secret from its rsession process
-    eval "$(steal-envs --process $pid RS_SHARED_SECRET)"
+    # Pluck RStudio's shared secret, and potentially the Unix socket, from its
+    # rsession process
+    eval "$(steal-envs --process $pid RS_SHARED_SECRET RS_LOCAL_PEER)"
 
     if [[ -z "$RS_SHARED_SECRET" ]]; then
         die "Whoops, couldn't find a session secret to steal!"
     fi
 
-    # Snoop the HTTP port for rsession
-    export RS_ADDRESS="$(lsof -Fn -nP -a -i 4tcp@localhost -s tcp:LISTEN -p $pid | grep ^n | cut -c 2- | head -n1)"
+    if [[ -n "$RS_LOCAL_PEER" ]]; then
+        # Port doesn't matter on the Unix socket, we're just talking HTTP
+        # directly to it.
+        export RS_ADDRESS="localhost"
+    else
+        # Not listening on a Unix socket, so snoop the HTTP port for rsession
+        export RS_ADDRESS="$(lsof -Fn -nP -a -i 4tcp@localhost -s tcp:LISTEN -p $pid | grep ^n | cut -c 2- | head -n1)"
 
-    if [[ -z "$RS_ADDRESS" ]]; then
-        die "Whoops, couldn't figure out the rsession address"
+        if [[ -z "$RS_ADDRESS" ]]; then
+            die "Whoops, couldn't figure out the rsession address"
+        fi
     fi
 
     # Use the desktop app's static client id.  This id has been used since
@@ -53,6 +60,7 @@ find-session() {
     export RS_CLIENT_ID="33e600bb-c1b1-46bf-b562-ab5cba070b0e"
 
     debug "RS_SHARED_SECRET = $RS_SHARED_SECRET"
+    debug "RS_LOCAL_PEER    = $RS_LOCAL_PEER"
     debug "RS_ADDRESS       = $RS_ADDRESS"
     debug "RS_CLIENT_ID     = $RS_CLIENT_ID"
 }
@@ -64,6 +72,7 @@ run-cmd() {
         -H 'Accept: application/json' \
         -H "X-Shared-Secret: $RS_SHARED_SECRET" \
         -d "$(cmd-to-msg "$cmd")" \
+        ${RS_LOCAL_PEER:+--unix-socket} $RS_LOCAL_PEER \
         > /dev/null
 }
 
