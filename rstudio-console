@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e -o pipefail
 : ${RS_DEBUG:=0}
-[[ $RS_DEBUG -gt 0 ]] && set -x
+[[ $RS_DEBUG -gt 1 ]] && set -x
 
 main() {
     find-session
